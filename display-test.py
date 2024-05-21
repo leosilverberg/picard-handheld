@@ -9,7 +9,7 @@ import threading
 
 class DisplayManager:
     def __init__(self):
-        # Initialize display (example setup, modify as per your actual setup)
+        #  init
         spi = busio.SPI(board.SCK, MOSI=board.MOSI)
         scs = digitalio.DigitalInOut(board.D6)  # inverted chip select
         self.display = adafruit_sharpmemorydisplay.SharpMemoryDisplay(spi, scs, 400, 240)
@@ -45,11 +45,10 @@ class DisplayManager:
     def run_display(self):
         while True:
             self.update_display()
-            time.sleep(0.1)  # Update the display at regular intervals
+            time.sleep(0.1)  
 
     def update_display(self):
-        # Clear the image
-        # self.image, self.draw = self.create_blank_image()
+
         
         # Update the top bar with status
         if not self.status_queue.empty():

@@ -1,138 +1,137 @@
 import board
 import busio
 import digitalio
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 import adafruit_sharpmemorydisplay
 import time
+from queue import Queue
+import threading
 
+class DisplayManager:
+    def __init__(self):
+        # init display
+        spi = busio.SPI(board.SCK, MOSI=board.MOSI)
+        scs = digitalio.DigitalInOut(board.D6)  
+        self.display = adafruit_sharpmemorydisplay.SharpMemoryDisplay(spi, scs, 400, 240)
 
+        # colors
+        self.BLACK = 0
+        self.WHITE = 255
+        self.FONTSIZE = 20
 
-# Colors
-BLACK = 0
-WHITE = 255
-FONTSIZE = 25
+        self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", self.FONTSIZE)
 
-# Initialize display
-spi = busio.SPI(board.SCK, MOSI=board.MOSI)
-scs = digitalio.DigitalInOut(board.D6)  # inverted chip select
-display = adafruit_sharpmemorydisplay.SharpMemoryDisplay(spi, scs, 400, 240)
+        # blank image
+        self.image, self.draw = self.create_blank_image()
+        
+        # queue setup
+        self.status_queue = Queue()
+        self.conversation_queue = Queue()
+        
+        self.conversation_history = []
+        
+        self.display_thread = threading.Thread(target=self.run_display)
+        self.display_thread.daemon = True
+        self.display_thread.start()
 
-# Load a TTF font
-font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", FONTSIZE)
+    def create_blank_image(self):
+        image = Image.new("1", (self.display.width, self.display.height))
+        draw = ImageDraw.Draw(image)
+        return image, draw
 
-def create_blank_image():
-    image = Image.new("1", (display.width, display.height))
-    draw = ImageDraw.Draw(image)
-    return image, draw
+    def run_display(self):
+        while True:
+            self.update_display()
+            time.sleep(0.1)  
 
-            
-# Function to display a boot image
-def display_boot_image(image_path="assets/picard-facepalm.jpg"):
-    print("display boot image")
-    # Load and process the image
-    image = Image.open(image_path)
+    def update_display(self):
 
-    # Convert to grayscale
-    image = image.convert("L")
+        
+        
+        if not self.status_queue.empty():
+            status = self.status_queue.get_nowait()
+            print(f"Displaying status: {status}")
+            self.display_status(status)
+        
+       
+        if not self.conversation_queue.empty():
+            message = self.conversation_queue.get_nowait()
+            self.conversation_history.append(message)
+            print(f"Displaying conv: {message}")
+            self.display_conversation()
+        
+        
+        
+        
+        self.display.image(self.image)
+        self.display.show()
 
-    # Enhance contrast
-    enhancer = ImageEnhance.Contrast(image)
-    image = enhancer.enhance(2.0)
+    def display_status(self, status):
+        bar_height = 30
+        self.draw.rectangle([(0, 0), (self.display.width, bar_height)], fill=self.WHITE)
+        bbox = self.font.getbbox(status)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        text_x = (self.display.width - text_width) // 2
+        text_y = (bar_height - text_height) // 2
+        self.draw.text((text_x, text_y), status, font=self.font, fill=self.BLACK)
 
-    # Convert to 1-bit image
-    image = image.convert("1")
+    def display_conversation(self):
+        bar_height = 30
+        text_x = 10
+        text_y = bar_height + 10
+        max_width = self.display.width - 20 
+        
+        for message in self.conversation_history:
+            lines = self.wrap_text(message, max_width)
+            for line in lines:
+                if text_y + self.font.getbbox(line)[3] - self.font.getbbox(line)[1] >= self.display.height:
+                    break
+                self.draw.text((text_x, text_y), line, font=self.font, fill=self.WHITE)
+                text_y += self.font.getbbox(line)[3] - self.font.getbbox(line)[1] + 2  # Add a small margin between lines
 
-    # Resize image to fit display using LANCZOS for high-quality downsampling
-    image = image.resize((display.width, display.height), Image.Resampling.LANCZOS)
+    def wrap_text(self, text, max_width):
+        lines = []
+        words = text.split()
+        
+        while words:
+            line = ''
+            while words and self.font.getbbox(line + words[0])[2] <= max_width:
+                line += (words.pop(0) + ' ')
+            lines.append(line.strip())
+        
+        return lines
 
-    #write on the image
-    draw = ImageDraw.Draw(image)
-    text = "PICARD"
-    bbox = font.getbbox(text)
-    (font_width, font_height) = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    x = display.width // 2 - font_width // 2
-    y = display.height // 2 - font_height // 2
+    def update_status(self, status):
+        self.status_queue.put(status)
 
-    # Draw outlined text with adjustable outline thickness
-    outline_color = BLACK
-    main_color = WHITE
-    outline_thickness = 5
+    def add_human_input(self, text):
+        self.conversation_queue.put(f"Human: {text}")
 
-    # Draw outline
-    for dx in range(-outline_thickness, outline_thickness + 1):
-        for dy in range(-outline_thickness, outline_thickness + 1):
-            if dx != 0 or dy != 0:  # Skip the center position
-                draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
-
-    # Draw main text
-    draw.text((x, y), text, font=font, fill=main_color)
-
-    # Display the image
-    display.image(image)
-    display.show()
-
-
-# Function to create a blank main screen with a top bar
-def create_main_screen():
-    # Create a blank image for drawing
-    image = Image.new("1", (display.width, display.height), color=WHITE)
-    draw = ImageDraw.Draw(image)
-
-    # Draw the top bar
-    bar_height = 30
-    draw.rectangle([(0, 0), (display.width, bar_height)], fill=BLACK)
-
-    # Display the main screen
-    display.image(image)
-    display.show()
-    return image, draw
-
-def wrap_text(text, font, max_width):
-    lines = []
-    words = text.split()
-    
-    while words:
-        line = ''
-        while words and font.getbbox(line + words[0])[2] <= max_width:
-            line += (words.pop(0) + ' ')
-        lines.append(line.strip())
-    
-    return lines
-
-def update_main_screen_text(image, draw, text):
-    # Clear the main body area
-    bar_height = 30
-    draw.rectangle([(0, bar_height), (display.width, display.height)], fill=WHITE)
-
-    # Wrap the text
-    max_width = display.width - 20  
-    lines = wrap_text(text, font, max_width)
-    
-    # Draw the wrapped text in the main body area
-    text_x = 10
-    text_y = bar_height + 10
-    line_height = font.getbbox('A')[3] - font.getbbox('A')[1]  
-    line_height = line_height + 5 #some padding
-    
-    for line in lines:
-        draw.text((text_x, text_y), line, font=font, fill=BLACK)
-        text_y += line_height
-
-    # Display the updated image
-    display.image(image)
-    display.show()
-
-
-# Example usage
+    def add_response(self, text):
+        self.conversation_queue.put(f"AI: {text}")
+        
+        
 if __name__ == "__main__":
-    display_boot_image()
-    time.sleep(5)  # Display boot image for 3 seconds
+    display_manager = DisplayManager()
 
-    image, draw = create_main_screen()
-    update_main_screen_text(image, draw, "Welcome to the main screen!")
-    time.sleep(3)  # Display initial text for 3 seconds
+    
+    print("Updating status to Listening...")
+    display_manager.update_status("Listening...")
 
-    # Dynamically update text
-    for i in range(5):
-        update_main_screen_text(image, draw, f"Dynamic update {i+1}")
-        time.sleep(2)  # Pause for 2 seconds before the next update
+    time.sleep(2) 
+    print("Updating status to heard...")
+    display_manager.update_status("heard")
+    
+    print("Adding conversation")
+    display_manager.add_human_input("Hello, how are you?")
+    time.sleep(2)
+    display_manager.add_response("I am an AI. How can I assist you today?")
+    time.sleep(2)
+    display_manager.add_human_input("What's the weather like?")
+    time.sleep(2)
+    display_manager.add_response("The weather is sunny with a slight chance of rain.")
+
+    
+    while True:
+        time.sleep(1)

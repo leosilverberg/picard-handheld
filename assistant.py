@@ -4,7 +4,7 @@ import os
 from assistanttools.actions import get_llm_response, message_history, preload_model
 from assistanttools.generate_gguf import generate_gguf_stream
 from assistanttools.transcribe_gguf import transcribe_gguf
-from assistanttools.display import display_boot_image, create_main_screen, update_main_screen_text
+from assistanttools.display import DisplayManager
 import soundfile as sf
 import re
 import json
@@ -56,9 +56,9 @@ class ButtonListener:
         
         
         
-        display_boot_image()
-        time.sleep(2)
-        self.image, self.draw = create_main_screen()
+        self.display_manager = DisplayManager()
+        # time.sleep(2)
+        self.display_manager.update_status("Ready")
     
 
     def on_button_press(self, channel):
@@ -73,7 +73,7 @@ class ButtonListener:
             GPIO.output(self.redled,GPIO.HIGH)
             GPIO.output(self.greenled,GPIO.LOW)
             GPIO.output(self.yellowled,GPIO.LOW)
-            update_main_screen_text(self.image, self.draw, "Listening...")
+            self.display_manager.update_status("Listening...")
             
             if self.audio_thread is None or not self.audio_thread.is_alive():
                 self.audio_thread = threading.Thread(target=self.record_audio)
@@ -120,15 +120,16 @@ class ButtonListener:
                         f"{self.sounds_path}command.wav", sr=16000)
             sf.write(f"{self.sounds_path}command.wav", speech, rate)
 
-                    
-            update_main_screen_text(self.image, self.draw, "Human: [Transcribing]")
+            self.display_manager.update_status("Transcribing...")        
+            
             transcription = transcribe_gguf(whisper_cpp_path=self.whisper_cpp_path,
                                                     model_path=self.whisper_model_path,
                                                     file_path=f"{self.sounds_path}command.wav")
                     
-            update_main_screen_text(self.image, self.draw, "Human: "+transcription)
+            self.display_manager.add_human_input(transcription)
             print(transcription)
-            update_main_screen_text(self.image, self.draw, "Human: "+transcription+"... [LLM thinking]")
+            self.display_manager.update_status("LLM Thinking...") 
+            # update_main_screen_text(self.image, self.draw, "Human: "+transcription+"... [LLM thinking]")
             GPIO.output(self.redled,GPIO.LOW)
             GPIO.output(self.greenled,GPIO.LOW)
             GPIO.output(self.yellowled,GPIO.HIGH)
@@ -154,7 +155,7 @@ class ButtonListener:
             GPIO.output(self.redled,GPIO.LOW)
             GPIO.output(self.yellowled,GPIO.LOW)
             GPIO.output(self.greenled,GPIO.HIGH)
-            update_main_screen_text(self.image, self.draw, "Response: "+response)
+            self.display_manager.add_response(response)
                     
             if self.store_conversations:
                 with open(f"storage/{self.conversation_id}.json", "w") as f:
@@ -166,7 +167,7 @@ class ButtonListener:
     
     def wait_to_listen(self):
         print("waiting to listen!")
-        update_main_screen_text(self.image, self.draw, "Ready to respond.")
+        self.display_manager.update_status("Ready")
         while True:
             time.sleep(0.1)  # Prevent CPU overload by adding a small sleep
 
@@ -178,7 +179,7 @@ if __name__ == "__main__":
         WHISPER_MODEL_PATH, LLAMA_CPP_PATH, MOONDREAM_MMPROJ_PATH, \
         MOONDREAM_MODEL_PATH, LOCAL_MODEL, STORE_CONVERSATIONS
 
-    display_boot_image()
+
     preload_model(LOCAL_MODEL)
 
     
