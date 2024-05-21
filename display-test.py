@@ -1,9 +1,141 @@
-import RPi.GPIO as GPIO # Import Raspberry Pi GPIO library
-def button_callback(channel):
-    print("Button was pushed!")
-GPIO.setwarnings(False) # Ignore warning for now
-GPIO.setmode(GPIO.BOARD) # Use physical pin numbering
-GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
-GPIO.add_event_detect(10,GPIO.RISING,callback=button_callback) # Setup event on pin 10 rising edge
-message = input("Press enter to quit\n\n") # Run until someone presses enter
-GPIO.cleanup() # Clean up
+import board
+import busio
+import digitalio
+from PIL import Image, ImageDraw, ImageFont
+import adafruit_sharpmemorydisplay
+import time
+from queue import Queue
+import threading
+
+class DisplayManager:
+    def __init__(self):
+        # Initialize display (example setup, modify as per your actual setup)
+        spi = busio.SPI(board.SCK, MOSI=board.MOSI)
+        scs = digitalio.DigitalInOut(board.D6)  # inverted chip select
+        self.display = adafruit_sharpmemorydisplay.SharpMemoryDisplay(spi, scs, 400, 240)
+
+        # Colors
+        self.BLACK = 0
+        self.WHITE = 255
+        self.FONTSIZE = 20
+
+        # Load font
+        self.font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", self.FONTSIZE)
+
+        # Create a blank image
+        self.image, self.draw = self.create_blank_image()
+        
+        # Queues for updating status and conversation
+        self.status_queue = Queue()
+        self.conversation_queue = Queue()
+        
+        # Conversation history
+        self.conversation_history = []
+        
+        # Start the display thread
+        self.display_thread = threading.Thread(target=self.run_display)
+        self.display_thread.daemon = True
+        self.display_thread.start()
+
+    def create_blank_image(self):
+        image = Image.new("1", (self.display.width, self.display.height))
+        draw = ImageDraw.Draw(image)
+        return image, draw
+
+    def run_display(self):
+        while True:
+            self.update_display()
+            time.sleep(0.1)  # Update the display at regular intervals
+
+    def update_display(self):
+        # Clear the image
+        # self.image, self.draw = self.create_blank_image()
+        
+        # Update the top bar with status
+        if not self.status_queue.empty():
+            status = self.status_queue.get_nowait()
+            print(f"Displaying status: {status}")
+            self.display_status(status)
+        
+        # Update the conversation area
+        if not self.conversation_queue.empty():
+            message = self.conversation_queue.get_nowait()
+            self.conversation_history.append(message)
+            print(f"Displaying conv: {message}")
+            self.display_conversation()
+        
+        
+        
+        # Show the image on the display
+        self.display.image(self.image)
+        self.display.show()
+
+    def display_status(self, status):
+        bar_height = 30
+        self.draw.rectangle([(0, 0), (self.display.width, bar_height)], fill=self.WHITE)
+        bbox = self.font.getbbox(status)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        text_x = (self.display.width - text_width) // 2
+        text_y = (bar_height - text_height) // 2
+        self.draw.text((text_x, text_y), status, font=self.font, fill=self.BLACK)
+
+    def display_conversation(self):
+        bar_height = 30
+        text_x = 10
+        text_y = bar_height + 10
+        max_width = self.display.width - 20  # 10px padding on each side
+        
+        for message in self.conversation_history:
+            lines = self.wrap_text(message, max_width)
+            for line in lines:
+                if text_y + self.font.getbbox(line)[3] - self.font.getbbox(line)[1] >= self.display.height:
+                    break
+                self.draw.text((text_x, text_y), line, font=self.font, fill=self.WHITE)
+                text_y += self.font.getbbox(line)[3] - self.font.getbbox(line)[1] + 2  # Add a small margin between lines
+
+    def wrap_text(self, text, max_width):
+        lines = []
+        words = text.split()
+        
+        while words:
+            line = ''
+            while words and self.font.getbbox(line + words[0])[2] <= max_width:
+                line += (words.pop(0) + ' ')
+            lines.append(line.strip())
+        
+        return lines
+
+    def update_status(self, status):
+        self.status_queue.put(status)
+
+    def add_human_input(self, text):
+        self.conversation_queue.put(f"Human: {text}")
+
+    def add_response(self, text):
+        self.conversation_queue.put(f"AI: {text}")
+        
+        
+if __name__ == "__main__":
+    display_manager = DisplayManager()
+
+    # Example status updates
+    print("Updating status to Listening...")
+    display_manager.update_status("Listening...")
+
+    time.sleep(2)  # Allow time for the status to be processed and displayed
+    print("Updating status to heard...")
+    display_manager.update_status("heard")
+    # Example conversation updates
+    print("Adding conversation")
+    display_manager.add_human_input("Hello, how are you?")
+    time.sleep(2)
+    display_manager.add_response("I am an AI. How can I assist you today?")
+    time.sleep(2)
+    display_manager.add_human_input("What's the weather like?")
+    time.sleep(2)
+    display_manager.add_response("The weather is sunny with a slight chance of rain.")
+
+    # Keep the main thread alive to allow the display thread to run
+    while True:
+        time.sleep(1)
