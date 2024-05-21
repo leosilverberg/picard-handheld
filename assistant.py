@@ -4,177 +4,173 @@ import os
 from assistanttools.actions import get_llm_response, message_history, preload_model
 from assistanttools.generate_gguf import generate_gguf_stream
 from assistanttools.transcribe_gguf import transcribe_gguf
+from assistanttools.display import display_boot_image, create_main_screen, update_main_screen_text
 import soundfile as sf
 import re
 import json
 import uuid
+import RPi.GPIO as GPIO
+import time
+import pyaudio
+import wave
+import threading
 
-
-class WakeWordListener:
+class ButtonListener:
     def __init__(self,
                  timeout,
-                 phrase_time_limit,
                  sounds_path,
-                 wake_word,
-                 action_engine,
                  whisper_cpp_path,
-                 whisper_model_path):
-
+                 whisper_model_path,
+                 message_history,
+                 store_conversations,
+                 ollama_model):
+        
         self.timeout = timeout
-        self.phrase_time_limit = phrase_time_limit
-        self.sounds_path = sounds_path
-        self.wake_word = wake_word
-        self.action_engine = action_engine
-        self.whisper_cpp_path = whisper_cpp_path
-        self.whisper_model_path = whisper_model_path
-
-    def listen_for_wake_word(self):
-
-        recognizer = sr.Recognizer()
-        os.system(f"espeak 'Hello, I am ready to assist you.'")
-        while True:
-            with sr.Microphone() as source:
-                try:
-                    audio = recognizer.listen(
-                        source, timeout=self.timeout, phrase_time_limit=self.phrase_time_limit)
-                except sr.WaitTimeoutError:
-                    continue
-
-            try:
-                with open(f"{self.sounds_path}audio.wav", "wb") as f:
-                    f.write(audio.get_wav_data())
-
-                speech, rate = librosa.load(
-                    f"{self.sounds_path}audio.wav", sr=16000)
-                sf.write(f"{self.sounds_path}audio.wav", speech, rate)
-
-                transcription = transcribe_gguf(whisper_cpp_path=self.whisper_cpp_path,
-                                                model_path=self.whisper_model_path,
-                                                file_path=f"{self.sounds_path}audio.wav")
-
-                if any(x in transcription.lower() for x in self.wake_word):
-                    os.system(f"espeak 'Yes?'")
-                    self.action_engine.run_second_listener(duration=5)
-
-            except sr.UnknownValueError:
-                print("Could not understand audio")
-
-
-class ActionEngine:
-    def __init__(
-            self,
-            sounds_path,
-            whisper_cpp_path,
-            whisper_model_path,
-            llama_cpp_path,
-            moondream_mmproj_path,
-            moondream_model_path,
-            ollama_model,
-            message_history,
-            store_conversations):
         self.sounds_path = sounds_path
         self.whisper_cpp_path = whisper_cpp_path
         self.whisper_model_path = whisper_model_path
-        self.llama_cpp_path = llama_cpp_path
-        self.moondream_mmproj_path = moondream_mmproj_path
-        self.moondream_model_path = moondream_model_path
-        self.ollama_model = ollama_model
         self.message_history = message_history
         self.store_conversations = store_conversations
+        self.ollama_model = ollama_model
         self.conversation_id = str(uuid.uuid4())
+        self.listening = False
+        self.audio_thread = None
+        
+        self.yellowled = 11
+        self.greenled = 13
+        self.redled = 15
 
-    def run_second_listener(self, duration):
-        recognizer = sr.Recognizer()
-        while True:
-            with sr.Microphone() as source:
-                print("Listening for command...")
-                try:
-                    audio = recognizer.listen(
-                        source, timeout=2, phrase_time_limit=duration)
-                except sr.WaitTimeoutError:
-                    continue
+        GPIO.setwarnings(False)
+        GPIO.setmode(GPIO.BOARD)
+        GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+        GPIO.add_event_detect(10,GPIO.RISING,callback=self.on_button_press, bouncetime=300)
+        
+        GPIO.setup(self.yellowled,GPIO.OUT)
+        GPIO.setup(self.greenled,GPIO.OUT)
+        GPIO.setup(self.redled,GPIO.OUT)
+        
+        GPIO.output(self.yellowled,GPIO.LOW)
+        GPIO.output(self.greenled,GPIO.LOW)
+        GPIO.output(self.redled,GPIO.LOW)
+        
+        
+        
+        
+        display_boot_image()
+        time.sleep(2)
+        self.image, self.draw = create_main_screen()
+    
 
-            try:
-                with open(f"{self.sounds_path}command.wav", "wb") as f:
-                    f.write(audio.get_wav_data())
-                speech, rate = librosa.load(
-                    f"{self.sounds_path}command.wav", sr=16000)
-                sf.write(f"{self.sounds_path}command.wav", speech, rate)
+    def on_button_press(self, channel):
+        
+        if self.listening:
+            self.listening = False
+            GPIO.output(self.redled,GPIO.LOW)
+        else:
+            self.listening = True
+            print("setting: listening")
+            
+            GPIO.output(self.redled,GPIO.HIGH)
+            GPIO.output(self.greenled,GPIO.LOW)
+            GPIO.output(self.yellowled,GPIO.LOW)
+            update_main_screen_text(self.image, self.draw, "Listening...")
+            
+            if self.audio_thread is None or not self.audio_thread.is_alive():
+                self.audio_thread = threading.Thread(target=self.record_audio)
+                self.audio_thread.start()
+            
+   
+    def record_audio(self):
+        p = pyaudio.PyAudio()
+        stream = p.open(format=pyaudio.paInt16,
+                        channels=1,
+                        rate=16000,
+                        input=True,
+                        frames_per_buffer=1024)
+        print("Recording...")
+        
+        frames = []
 
-                transcription = transcribe_gguf(whisper_cpp_path=self.whisper_cpp_path,
-                                                model_path=self.whisper_model_path,
-                                                file_path=f"{self.sounds_path}command.wav")
+        while self.listening:
+            data = stream.read(1024)
+            frames.append(data)
 
-                if self.check_if_ignore(transcription):
-                    continue
+        print("Finished recording.")
+        
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        
+        wave_file_path = f"{self.sounds_path}command.wav"
+        wf = wave.open(wave_file_path, 'wb')
+        wf.setnchannels(1)
+        wf.setsampwidth(p.get_sample_size(pyaudio.paInt16))
+        wf.setframerate(16000)
+        wf.writeframes(b''.join(frames))
+        wf.close()
+        
+        print(f"Audio saved to {wave_file_path}")
+        
+        self.process_audio()
+    
+    def process_audio(self):
+        try:
+            
+            speech, rate = librosa.load(
+                        f"{self.sounds_path}command.wav", sr=16000)
+            sf.write(f"{self.sounds_path}command.wav", speech, rate)
 
-                if self.check_if_exit(transcription):
-                    os.system(f"espeak 'Program stopped. See you later!'")
-                    return
-
-                elif self.check_if_vision_mode(transcription):
-                    self.message_history.append({
-                        "role": "user",
-                        "content": transcription
-                    })
-                    os.system(f"espeak 'Taking a photo.'")
-                    os.system("libcamera-still -o images/image.jpg")
-                    os.system(f"espeak 'Photo taken. Please wait.'")
-
-                    prompt = '"<image>\n\nQuestion: Describe this image.\n\nAnswer: "'
-                    response = ""
-                    word = ""
-                    for chunk in generate_gguf_stream(llama_cpp_path=self.llama_cpp_path,
-                                                      model_path=self.moondream_model_path,
-                                                      mmproj_path=self.moondream_mmproj_path,
-                                                      image_path="images/image.jpg",
-                                                      prompt=prompt,
-                                                      temp=0.):
-                        word += chunk
-                        if ' ' in chunk:
-                            os.system(f"espeak '{word}'")
-                            response += word
-                            word = ""
-
-                    os.system(f"espeak '{word}'")
-                    self.message_history.append({
-                        "role": "assistant",
-                        "content": response,
-                    })
-
-                else:
-                    os.system(f"play -v .1 sounds/heard.wav")
-                    response, self.message_history = get_llm_response(
+                    
+            update_main_screen_text(self.image, self.draw, "Human: [Transcribing]")
+            transcription = transcribe_gguf(whisper_cpp_path=self.whisper_cpp_path,
+                                                    model_path=self.whisper_model_path,
+                                                    file_path=f"{self.sounds_path}command.wav")
+                    
+            update_main_screen_text(self.image, self.draw, "Human: "+transcription)
+            print(transcription)
+            update_main_screen_text(self.image, self.draw, "Human: "+transcription+"... [LLM thinking]")
+            GPIO.output(self.redled,GPIO.LOW)
+            GPIO.output(self.greenled,GPIO.LOW)
+            GPIO.output(self.yellowled,GPIO.HIGH)
+                    
+            response, self.message_history = get_llm_response(
                         transcription, self.message_history, model_name=self.ollama_model)
-                # save appended message history to json
-                if self.store_conversations:
-                    with open(f"storage/{self.conversation_id}.json", "w") as f:
-                        json.dump(self.message_history, f, indent=4)
+                    
+            print(response)
+            
+            GPIO.output(self.redled,GPIO.HIGH)
+            GPIO.output(self.yellowled,GPIO.LOW)
+            GPIO.output(self.greenled,GPIO.LOW)
+            time.sleep(0.2)
+            GPIO.output(self.redled,GPIO.HIGH)
+            GPIO.output(self.yellowled,GPIO.HIGH)
+            GPIO.output(self.greenled,GPIO.LOW)
+            time.sleep(0.2)
+            GPIO.output(self.redled,GPIO.HIGH)
+            GPIO.output(self.yellowled,GPIO.HIGH)
+            GPIO.output(self.greenled,GPIO.HIGH)
+            time.sleep(0.2)
+            
+            GPIO.output(self.redled,GPIO.LOW)
+            GPIO.output(self.yellowled,GPIO.LOW)
+            GPIO.output(self.greenled,GPIO.HIGH)
+            update_main_screen_text(self.image, self.draw, "Response: "+response)
+                    
+            if self.store_conversations:
+                with open(f"storage/{self.conversation_id}.json", "w") as f:
+                    json.dump(self.message_history, f, indent=4)
+        
+        except sr.UnknownValueError:
+            print("Could not understand audio")
+         
+    
+    def wait_to_listen(self):
+        print("waiting to listen!")
+        update_main_screen_text(self.image, self.draw, "Ready to respond.")
+        while True:
+            time.sleep(0.1)  # Prevent CPU overload by adding a small sleep
 
-            except sr.UnknownValueError:
-                print("Could not understand audio")
-
-    def check_if_ignore(self, transcription):
-        """
-        Check if the transcription should be ignored. This happens if the whisper prediction is "you" or "." or "", or is some sound effect like wind blowing, usually inside parentheses.
-        """
-        if transcription.strip() == "you" or transcription.strip() == "." or transcription.strip() == "":
-            return True
-        if re.match(r"\(.*\)", transcription):
-            return True
-        return False
-
-    def check_if_exit(self, transcription):
-        """
-        Check if the transcription is an exit command.
-        """
-        return any([x in transcription.lower() for x in ["stop", "exit", "quit"]])
-
-    def check_if_vision_mode(self, transcription):
-        """
-        Check if the transcription is a command to enter vision mode.
-        """
-        return any([x in transcription.lower() for x in ["photo", "picture", "image", "snap", "shoot"]])
+            
 
 
 if __name__ == "__main__":
@@ -182,23 +178,18 @@ if __name__ == "__main__":
         WHISPER_MODEL_PATH, LLAMA_CPP_PATH, MOONDREAM_MMPROJ_PATH, \
         MOONDREAM_MODEL_PATH, LOCAL_MODEL, STORE_CONVERSATIONS
 
+    display_boot_image()
     preload_model(LOCAL_MODEL)
-    action_engine = ActionEngine(sounds_path=SOUNDS_PATH,
-                                 whisper_cpp_path=WHISPER_CPP_PATH,
-                                 whisper_model_path=WHISPER_MODEL_PATH,
-                                 llama_cpp_path=LLAMA_CPP_PATH,
-                                 moondream_mmproj_path=MOONDREAM_MMPROJ_PATH,
-                                 moondream_model_path=MOONDREAM_MODEL_PATH,
-                                 ollama_model=LOCAL_MODEL,
-                                 message_history=message_history,
-                                 store_conversations=STORE_CONVERSATIONS)
 
-    wake_word_listener = WakeWordListener(timeout=2,
-                                          phrase_time_limit=2,
-                                          sounds_path=SOUNDS_PATH,
-                                          wake_word=WAKE_WORD,
-                                          action_engine=action_engine,
-                                          whisper_cpp_path=WHISPER_CPP_PATH,
-                                          whisper_model_path=WHISPER_MODEL_PATH)
+    
+    button_listener = ButtonListener(
+        timeout = 2,
+        sounds_path=SOUNDS_PATH,
+        whisper_cpp_path=WHISPER_CPP_PATH,
+        whisper_model_path=WHISPER_MODEL_PATH,
+        store_conversations=STORE_CONVERSATIONS,
+        message_history=message_history,
+        ollama_model=LOCAL_MODEL
+    )
 
-    wake_word_listener.listen_for_wake_word()
+    button_listener.wait_to_listen()

@@ -15,4 +15,6 @@ images/
 
 .env
 
+.venv
+
 storage
