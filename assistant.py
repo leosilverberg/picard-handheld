@@ -9,11 +9,14 @@ import soundfile as sf
 import re
 import json
 import uuid
-import RPi.GPIO as GPIO
+
 import time
 import pyaudio
 import wave
 import threading
+from PIL import Image
+
+from displayhatmini import DisplayHATMini
 
 class ButtonListener:
     def __init__(self,
@@ -36,49 +39,38 @@ class ButtonListener:
         self.listening = False
         self.audio_thread = None
         
-        self.yellowled = 11
-        self.greenled = 13
-        self.redled = 15
 
-        GPIO.setwarnings(False)
-        GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-        GPIO.add_event_detect(10,GPIO.RISING,callback=self.on_button_press, bouncetime=300)
-        
-        GPIO.setup(self.yellowled,GPIO.OUT)
-        GPIO.setup(self.greenled,GPIO.OUT)
-        GPIO.setup(self.redled,GPIO.OUT)
-        
-        GPIO.output(self.yellowled,GPIO.LOW)
-        GPIO.output(self.greenled,GPIO.LOW)
-        GPIO.output(self.redled,GPIO.LOW)
-        
-        
         
         
         self.display_manager = DisplayManager()
+        
+        self.displayhatmini =self.display_manager.display
+        self.displayhatmini.on_button_pressed(self.button_callback)
         # time.sleep(2)
         self.display_manager.update_status("Ready")
     
 
-    def on_button_press(self, channel):
+    def button_callback(self, pin):
+        global brightness
+
+        # Only handle presses
+        if not self.displayhatmini.read_button(pin):
+            return
+
         
-        if self.listening:
-            self.listening = False
-            GPIO.output(self.redled,GPIO.LOW)
-        else:
-            self.listening = True
-            print("setting: listening")
+        if pin == self.displayhatmini.BUTTON_A:
+            if self.listening:
+                self.listening = False
             
-            GPIO.output(self.redled,GPIO.HIGH)
-            GPIO.output(self.greenled,GPIO.LOW)
-            GPIO.output(self.yellowled,GPIO.LOW)
-            self.display_manager.update_status("Listening...")
-            
-            if self.audio_thread is None or not self.audio_thread.is_alive():
-                self.audio_thread = threading.Thread(target=self.record_audio)
-                self.audio_thread.start()
-            
+            else:
+                self.listening = True
+                self.display_manager.update_status("Listening...")
+                if self.audio_thread is None or not self.audio_thread.is_alive():
+                    self.audio_thread = threading.Thread(target=self.record_audio)
+                    self.audio_thread.start()
+
+    
+       
    
     def record_audio(self):
         p = pyaudio.PyAudio()
@@ -130,31 +122,14 @@ class ButtonListener:
             print(transcription)
             self.display_manager.update_status("LLM Thinking...") 
             # update_main_screen_text(self.image, self.draw, "Human: "+transcription+"... [LLM thinking]")
-            GPIO.output(self.redled,GPIO.LOW)
-            GPIO.output(self.greenled,GPIO.LOW)
-            GPIO.output(self.yellowled,GPIO.HIGH)
+            
                     
             response, self.message_history = get_llm_response(
                         transcription, self.message_history, model_name=self.ollama_model)
                     
             print(response)
             
-            GPIO.output(self.redled,GPIO.HIGH)
-            GPIO.output(self.yellowled,GPIO.LOW)
-            GPIO.output(self.greenled,GPIO.LOW)
-            time.sleep(0.2)
-            GPIO.output(self.redled,GPIO.HIGH)
-            GPIO.output(self.yellowled,GPIO.HIGH)
-            GPIO.output(self.greenled,GPIO.LOW)
-            time.sleep(0.2)
-            GPIO.output(self.redled,GPIO.HIGH)
-            GPIO.output(self.yellowled,GPIO.HIGH)
-            GPIO.output(self.greenled,GPIO.HIGH)
-            time.sleep(0.2)
             
-            GPIO.output(self.redled,GPIO.LOW)
-            GPIO.output(self.yellowled,GPIO.LOW)
-            GPIO.output(self.greenled,GPIO.HIGH)
             self.display_manager.add_response(response)
                     
             if self.store_conversations:

@@ -7,7 +7,7 @@ load_dotenv()
 
 message_history = [{
     'role': 'system',
-    'content': 'You are PiCard, a witty Raspbery Pi Voice Assistant. Please help by answering questions in only a sentence.',
+    'content': 'You are PiCard, a witty Raspbery Pi Voice Assistant. Please help by answering questions in only a sentence or two.',
 }]
 
 sentence_stoppers = ['. ', '.\n', '? ', '! ', '?\n', '!\n', '.\n']
