@@ -1,7 +1,7 @@
 import speech_recognition as sr
 import librosa
 import os
-from assistanttools.actions import get_llm_response, message_history, preload_model
+from assistanttools.actions import get_llm_response, message_history, preload_model, get_llm_response_with_docs, make_embeddings
 from assistanttools.generate_gguf import generate_gguf_stream
 from assistanttools.transcribe_gguf import transcribe_gguf
 from assistanttools.display import DisplayManager
@@ -60,11 +60,12 @@ class ButtonListener:
         
         if pin == self.displayhatmini.BUTTON_A:
             if self.listening:
+                self.display_manager.update_status("Heard")
                 self.listening = False
             
             else:
                 self.listening = True
-                self.display_manager.update_status("Listening...")
+                self.display_manager.update_status("Listening")
                 if self.audio_thread is None or not self.audio_thread.is_alive():
                     self.audio_thread = threading.Thread(target=self.record_audio)
                     self.audio_thread.start()
@@ -112,7 +113,7 @@ class ButtonListener:
                         f"{self.sounds_path}command.wav", sr=16000)
             sf.write(f"{self.sounds_path}command.wav", speech, rate)
 
-            self.display_manager.update_status("Transcribing...")        
+            self.display_manager.update_status("Transcribing")        
             
             transcription = transcribe_gguf(whisper_cpp_path=self.whisper_cpp_path,
                                                     model_path=self.whisper_model_path,
@@ -120,21 +121,20 @@ class ButtonListener:
                     
             self.display_manager.add_human_input(transcription)
             print(transcription)
-            self.display_manager.update_status("LLM Thinking...") 
+            self.display_manager.update_status("LLM Thinking") 
             # update_main_screen_text(self.image, self.draw, "Human: "+transcription+"... [LLM thinking]")
             
                     
-            response, self.message_history = get_llm_response(
-                        transcription, self.message_history, model_name=self.ollama_model)
+            response = get_llm_response_with_docs(
+                        transcription,  model_name=self.ollama_model)
                     
-            print(response)
+            print(response['response'])
             
             
-            self.display_manager.add_response(response)
-                    
-            if self.store_conversations:
-                with open(f"storage/{self.conversation_id}.json", "w") as f:
-                    json.dump(self.message_history, f, indent=4)
+            self.display_manager.add_response(response['response'])
+            
+            self.display_manager.update_status("LLM Ready")       
+            
         
         except sr.UnknownValueError:
             print("Could not understand audio")
@@ -156,6 +156,8 @@ if __name__ == "__main__":
 
 
     preload_model(LOCAL_MODEL)
+    
+    make_embeddings()
 
     
     button_listener = ButtonListener(
