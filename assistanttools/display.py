@@ -46,6 +46,7 @@ class DisplayManager:
         # Colors
         self.BLACK = 0
         self.WHITE = (255,255,255)
+        self.GREEN = (0,255,0)
         self.FONTSIZE = 18
 
         # Load font
@@ -116,11 +117,11 @@ class DisplayManager:
         bbox = self.font.getbbox(status)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-        text_x = (self.width - text_width) // 2
+        text_x = (self.width - text_width)
         text_y = (bar_height - text_height) // 2
  
         self.draw.text((text_x, text_y), status, font=self.font, fill=self.BLACK)
-        self.display_corner("\u2023 picard", 7, 1)
+        self.display_corner("\u2023 luna", 7, 1)
         self.display_corner("local:mistral-7b-0.3", 7, 13)
 
     def display_conversation(self):

@@ -1,0 +1,49 @@
+Apollo 11 Mission Log
+
+Date: July 16-24, 1969
+
+Mission: Apollo 11
+
+Objective: Perform a crewed lunar landing and return safely to Earth.
+
+July 16, 1969: Launch
+
+09:32 EDT: Saturn V rocket carrying Apollo 11 launches from Kennedy Space Center, Florida.
+Crew: Commander Neil Armstrong, Command Module Pilot Michael Collins, Lunar Module Pilot Edwin "Buzz" Aldrin.
+Mission: First manned mission to land on the Moon.
+July 19, 1969: Lunar Orbit Insertion
+
+13:22 EDT: Apollo 11 enters lunar orbit after a three-day journey.
+**Crew checks and prepares Lunar Module (LM) "Eagle" for descent.
+July 20, 1969: Lunar Landing
+
+13:46 EDT: Armstrong and Aldrin enter the Lunar Module.
+16:17 EDT: Lunar Module "Eagle" undocks from Command Module "Columbia."
+16:18 EDT: Collins, aboard "Columbia," remains in lunar orbit.
+16:43 EDT: "Eagle" begins powered descent.
+20:17 EDT: "Eagle" lands on Moon’s surface in the Sea of Tranquility. Armstrong reports, "The Eagle has landed."
+July 20, 1969: First Steps on the Moon
+
+22:56 EDT: Neil Armstrong descends ladder and steps onto the lunar surface, saying, "That's one small step for man, one giant leap for mankind."
+23:15 EDT: Buzz Aldrin joins Armstrong on the lunar surface.
+Activities: Collect lunar samples, deploy scientific experiments, and take photographs.
+Duration: Extravehicular activity (EVA) lasts approximately 2.5 hours.
+July 21, 1969: Departure from Moon
+
+13:54 EDT: "Eagle" ascends from the lunar surface.
+17:35 EDT: "Eagle" docks with "Columbia." Armstrong and Aldrin transfer samples and data to "Columbia" and rejoin Collins.
+July 22, 1969: Journey Back to Earth
+
+12:56 EDT: Trans-Earth injection burn is completed, setting Apollo 11 on course for Earth.
+July 24, 1969: Splashdown and Recovery
+
+12:50 EDT: Command Module "Columbia" re-enters Earth’s atmosphere.
+12:51 EDT: Apollo 11 splashes down in the Pacific Ocean, 1,440 miles southwest of Hawaii.
+Recovery: Crew retrieved by USS Hornet and enter quarantine to prevent possible contamination.
+Mission Achievements:
+
+First manned lunar landing and safe return.
+Collection of 47.5 pounds (21.5 kg) of lunar material.
+Deployment of scientific instruments for future data collection.
+Historic advancement in human space exploration and technology.
+End of Mission Log.
